@@ -49,7 +49,7 @@ Clone the repository:
 ```bash
 git clone https://github.com/althafvly/AmlogicKitchen AmlogicKitchen
 cd AmlogicKitchen
-git submodule update --init --recursive
+
 ```
 
 Enable 32-bit support and install required dependencies:
