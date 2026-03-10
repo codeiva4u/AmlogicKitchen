@@ -47,7 +47,7 @@ This project is intended for educational purposes. Use at your own risk.
 Clone the repository:
 
 ```bash
-git clone https://github.com/althafvly/AmlogicKitchen AmlogicKitchen
+git clone https://github.com/codeiva4u/AmlogicKitchen AmlogicKitchen
 cd AmlogicKitchen
 
 ```
