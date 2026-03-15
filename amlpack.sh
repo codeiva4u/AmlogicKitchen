@@ -110,7 +110,11 @@ case "$level" in
     if [[ -f level1/vbmeta.PARTITION ]]; then
       echo "Generating disabled vbmeta to bypass Android Verified Boot (AVB)..."
       if [[ -f "bin/avbtool.py" ]]; then
-        python3 bin/avbtool.py make_vbmeta_image --flags 2 --padding_size 4096 --output level1/vbmeta.PARTITION
+        # Store original to copy partition descriptors
+        mv level1/vbmeta.PARTITION level1/vbmeta_orig.img
+        # Generate new vbmeta with HASHTREE_DISABLED (2) but keeping OEM metadata structure
+        python3 bin/avbtool.py make_vbmeta_image --flags 2 --padding_size 4096 --include_descriptors_from_image level1/vbmeta_orig.img --output level1/vbmeta.PARTITION
+        rm -f level1/vbmeta_orig.img
         echo "Successfully patched vbmeta!"
       else
         echo "WARNING: bin/avbtool.py not found. AVB might cause a bootloop!"
