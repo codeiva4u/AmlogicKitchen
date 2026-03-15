@@ -582,6 +582,23 @@ class Extractor(object):
         self.__appendf(os.path.getsize(self.OUTPUT_IMAGE_FILE),
                        dir_my + self.FileName + '_size.txt')
         f.close()
+        
+        # --- FIX: Extract and Save Original Filesystem UUID ---
+        # The Linux kernel mounts partitions by UUID (e.g. root=PARTUUID=...)
+        # make_ext4fs generates a new random UUID. We MUST save the old one to restore it later.
+        with open(self.OUTPUT_IMAGE_FILE, 'rb') as file:
+            root = ext4.Volume(file).root
+            try:
+                # root.volume.uuid is typically a list of byte lists, or a raw 16-byte array depending on ext4.py
+                raw_uuid = root.volume.superblock.s_uuid
+                uuid_hex = "".join("{:02x}".format(c) for c in raw_uuid)
+                uuid_file = dir_my + self.FileName + '_uuid.txt'
+                with open(uuid_file, 'w') as uf:
+                    uf.write(uuid_hex)
+            except Exception as e:
+                self.__appendf("Warning: Could not save UUID: " + str(e), dir_my + 'uuid_err.log')
+        # --------------------------------------------------------
+
        # f = open(dir_my + self.FileName + '_name.txt', 'tw', encoding='utf-8')
        # self.__appendf(os.path.basename(self.OUTPUT_IMAGE_FILE).replace(".img", ""), dir_my + self.FileName + '_name.txt')
        # f.close()

@@ -73,11 +73,31 @@ else
     # --- FIX: Generate sparse output only if explicitly requested (-s) ---
     # We do NOT want to use $ORIG_TYPE=="sparse" if -r (USE_RESIZE) is passed,
     # because -r means it's for make_super.sh -> lpmake, which requires RAW images.
+    SPARSE_REQUIRED=false
     if [[ $USE_SPARSE == true ]] || ( [[ "$ORIG_TYPE" == "sparse" ]] && [[ $USE_RESIZE == false ]] ); then
-        FLAGS="-s $FLAGS"
+        SPARSE_REQUIRED=true
     fi
 
+    # ALWAYS create RAW first so we can inject the exact Partition UUID
     bin/make_ext4fs $FLAGS "$TEMP_IMG" "level2/$PART"
+    
+    # --- FIX: Inject Original Filesystem UUID into Superblock ---
+    # The bootloader or kernel panics if the newly rebuilt ext4 image has a random UUID.
+    # We use our custom script to hex-edit the exact original bits back into the raw superblock.
+    UUID_FILE="level2/config/${PART}_uuid.txt"
+    if [[ -f "$UUID_FILE" ]]; then
+        ORIG_UUID=$(cat "$UUID_FILE")
+        echo "  -> Restoring original Ext4 UUID: $ORIG_UUID"
+        python3 bin/set_ext4_uuid.py "$TEMP_IMG" "$ORIG_UUID" || true
+    fi
+
+    # Convert back to Sparse if required
+    if [[ $SPARSE_REQUIRED == true ]]; then
+        echo "  -> Converting RAW Ext4 back to Sparse format..."
+        mv "$TEMP_IMG" "${TEMP_IMG}.raw"
+        bin/img2simg "${TEMP_IMG}.raw" "$TEMP_IMG"
+        rm -f "${TEMP_IMG}.raw"
+    fi
 
     # Resize if requested (used by make_super.sh to minimize before lpmake)
     [[ $USE_RESIZE == true ]] && bin/resize2fs -M "$TEMP_IMG"
