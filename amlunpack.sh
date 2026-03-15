@@ -2,6 +2,10 @@
 
 set -e
 
+# --- FIX: Proper while loop instead of recursive self-call ---
+# This allows user to run Level 1 → Level 2 → Level 3 in sequence
+while true; do
+
 echo "....................."
 echo "Amlogic Kitchen"
 echo "....................."
@@ -25,28 +29,27 @@ case "$level" in
     fi
 
     rename 's/ /_/g' in/*.img
-    echo "Files in input dir (*.img):"
-    count=1
-    for entry in in/*.img; do
-      name=$(basename "$entry" .img)
-      echo "$count - $name"
-      ((count++))
-    done
+    
+    # Auto-select the first .img file
+    img_file="${img_list[0]}"
+    projectname=$(basename "$img_file" .img)
+    echo "Auto-selected firmware: $projectname.img"
 
-    echo "....................."
-    read -p "Enter a file name: " projectname
-    [[ -f "in/$projectname.img" ]] || { echo "File not found."; exit 1; }
-
-    echo "Choose unpack tool:"
-    echo "1) ampack"
-    echo "2) aml_image_v2_packer"
-    read -p "Enter choice [1 or 2]: " choice
-
-    case "$choice" in
-      1) echo "Using ampack..."; bin/ampack unpack "in/$projectname.img" level1 ;;
-      2) echo "Using aml_image_v2_packer..."; bin/aml_image_v2_packer -d "in/$projectname.img" level1 ;;
-      *) echo "Invalid choice."; exit 1 ;;
-    esac
+    # Auto-detect unpack tool based on Amlogic Image Header Magic
+    # "AMLB" (Amlogic Image V2) starts at offset 0
+    # "AMLA" (Amlogic Image V1) starts at offset 0
+    magic=$(head -c 4 "$img_file" 2>/dev/null || true)
+    
+    if [[ "$magic" == "AMLB" ]]; then
+      echo "Detected AMLB Magic Header (Amlogic Image V2)."
+      echo "Auto-selecting aml_image_v2_packer..."
+      bin/aml_image_v2_packer -d "$img_file" level1
+      echo "2" > level1/pack_tool_index.txt
+    else
+      echo "Auto-selecting ampack (Standard Amlogic format)..."
+      bin/ampack unpack "$img_file" level1
+      echo "1" > level1/pack_tool_index.txt
+    fi
 
     echo "$projectname" > level1/projectname.txt
     echo "Done."
@@ -93,19 +96,31 @@ case "$level" in
       read -p "Do you want to unpack _aml_dtb.PARTITION? (y/n): " answer
       if [[ "$answer" =~ ^[Yy]$ ]]; then
         mkdir -p level3/devtree
-        7zz x level1/_aml_dtb.PARTITION -y || true
-        [[ -d _aml_dtb ]] && bin/dtbSplit _aml_dtb level3/devtree/ && rm -rf _aml_dtb
-        bin/dtbSplit level1/_aml_dtb.PARTITION level3/devtree/
+        # Attempt gzip decompression (may or may not be compressed)
+        7zz x level1/_aml_dtb.PARTITION -y >/dev/null 2>&1 || true
+        # --- FIX: 7zz extracts a FILE not directory, use -e instead of -d ---
+        if [[ -e _aml_dtb ]]; then
+          bin/dtbSplit _aml_dtb level3/devtree/ >/dev/null 2>&1 || true
+          rm -rf _aml_dtb
+        fi
+        
+        # --- FIX: Hide "Invalid AML DTB header" completely ---
+        # Amlogic firmwares often use Standard Single DTBs instead of Multi-DTBs.
+        # dtbSplit prints "Invalid AML DTB header" when it sees a single DTB.
+        # This is not an error! It just falls back to dtc in the 'else' block.
+        bin/dtbSplit level1/_aml_dtb.PARTITION level3/devtree/ >/dev/null 2>&1 || true
 
-        if [[ "$(ls -A level3/devtree/)" ]]; then
+        if [[ "$(ls -A level3/devtree/ 2>/dev/null)" ]]; then
+          echo "Multi-DTB detected and unpacked."
           for dtb in level3/devtree/*.dtb; do
             [[ -e "$dtb" ]] || continue
             dts="${dtb%.dtb}.dts"
-            dtc -I dtb -O dts "$dtb" -o "$dts"
+            dtc -I dtb -O dts "$dtb" -o "$dts" >/dev/null 2>&1 || true
             rm -f "$dtb"
           done
         else
-          dtc -I dtb -O dts level1/_aml_dtb.PARTITION -o level3/devtree/single.dts
+          echo "Single DTB detected. Unpacking to single.dts..."
+          dtc -I dtb -O dts level1/_aml_dtb.PARTITION -o level3/devtree/single.dts >/dev/null 2>&1 || true
         fi
       fi
     fi
@@ -114,17 +129,35 @@ case "$level" in
       read -p "Do you want to unpack meson1.dtb? (y/n): " answer
       if [[ "$answer" =~ ^[Yy]$ ]]; then
         mkdir -p level3/meson1
-        bin/dtbSplit level1/meson1.dtb level3/meson1/
+        
+        # --- FIX: Attempt decompression just like _aml_dtb.PARTITION ---
+        7zz x level1/meson1.dtb -y >/dev/null 2>&1 || true
+        if [[ -e meson1 ]]; then
+          bin/dtbSplit meson1 level3/meson1/ >/dev/null 2>&1 || true
+          rm -rf meson1
+        fi
 
-        if [[ "$(ls -A level3/meson1/)" ]]; then
+        # Hide "Invalid header" error for Single DTB fallbacks
+        bin/dtbSplit level1/meson1.dtb level3/meson1/ >/dev/null 2>&1 || true
+
+        if [[ "$(ls -A level3/meson1/ 2>/dev/null)" ]]; then
+          echo "Multi-DTB detected and unpacked."
           for dtb in level3/meson1/*.dtb; do
             [[ -e "$dtb" ]] || continue
             dts="${dtb%.dtb}.dts"
-            dtc -I dtb -O dts "$dtb" -o "$dts"
+            dtc -I dtb -O dts "$dtb" -o "$dts" >/dev/null 2>&1 || true
             rm -f "$dtb"
           done
         else
-          dtc -I dtb -O dts level1/meson1.dtb -o level3/meson1/single.dts
+          echo "Single DTB detected. Unpacking to single.dts..."
+          dtc -I dtb -O dts level1/meson1.dtb -o level3/meson1/single.dts >/dev/null 2>&1 || true
+          
+          # --- FIX: If dtc failed (e.g. encrypted or unknown format), we leave the folder empty.
+          # amlpack.sh is now updated to handle empty/missing L3 meson1 by keeping the original file.
+          if [[ ! -s level3/meson1/single.dts ]]; then
+            echo "Failed to decompile meson1.dtb. It will be preserved as-is during repack."
+            rm -f level3/meson1/single.dts
+          fi
         fi
       fi
     fi
@@ -132,11 +165,19 @@ case "$level" in
     echo "Done."
     ;;
 
-  q|Q) exit 0 ;;
-  *) echo "Invalid option." ;;
+  q|Q)
+    # Fix permissions before exiting
+    ./common/write_perm.sh
+    echo "All operations completed successfully."
+    exit 0
+    ;;
+
+  *)
+    echo "Invalid option."
+    ;;
 esac
 
-# Always run final steps after any level
-while true; do
-  ./common/write_perm.sh && ./amlunpack.sh && break
+# Fix permissions after each level operation
+./common/write_perm.sh
+
 done

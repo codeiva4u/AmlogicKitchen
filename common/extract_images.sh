@@ -28,14 +28,26 @@ for IMAGE in "${partitions[@]}"; do
   echo "Extracting $IMAGE"
   TYPE=$(bin/gettype -i "$IMAGE_FILE")
 
+  # --- FIX: Save image type for ALL partitions ---
+  echo "$TYPE" > "level2/config/${IMAGE}_imgtype.txt"
+
   if [[ "$TYPE" == "erofs" ]]; then
     bin/extract.erofs -i "$IMAGE_FILE" -x -o "$OUTPUT_FOLDER"
+    # Save original partition file size
     du -b "$IMAGE_FILE" | cut -f1 > "level2/config/${IMAGE}_size.txt"
   elif [[ "$TYPE" == "sparse" ]]; then
+    # --- FIX: Save original sparse image size BEFORE converting ---
+    du -b "$IMAGE_FILE" | cut -f1 > "level2/config/${IMAGE}_size.txt"
     simg2img "$IMAGE_FILE" "level2/${IMAGE}.raw.img"
+    # Save the raw (desparseified) image size — needed for make_ext4fs -l
+    du -b "level2/${IMAGE}.raw.img" | cut -f1 > "level2/config/${IMAGE}_raw_size.txt"
     python3 bin/imgextractor.py "level2/${IMAGE}.raw.img" "$OUTPUT_FOLDER"
     rm -f "level2/${IMAGE}.raw.img"
   else
+    # Raw ext4 image
+    # --- FIX: Save raw image size ---
+    du -b "$IMAGE_FILE" | cut -f1 > "level2/config/${IMAGE}_size.txt"
+    du -b "$IMAGE_FILE" | cut -f1 > "level2/config/${IMAGE}_raw_size.txt"
     python3 bin/imgextractor.py "$IMAGE_FILE" "$OUTPUT_FOLDER"
   fi
 

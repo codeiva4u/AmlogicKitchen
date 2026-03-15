@@ -22,9 +22,15 @@ fi
 for filename in level2/*.img; do
   part="$(basename "$filename" .img)"
   if [ -d level2/$part ]; then
-    msize=$(du -sk level2/$part | cut -f1 | awk '{$1*=1024;$1=int($1*1.08);printf $1}')
-    echo "Creating $part image"
-    [ $msize -lt 1048576 ] && msize=1048576
+    # --- FIX: Use original raw size from saved config instead of 1.08x inflation ---
+    if [[ -f "level2/config/${part}_raw_size.txt" ]]; then
+      msize=$(cat "level2/config/${part}_raw_size.txt")
+      echo "Creating $part image (using original size: $msize)"
+    else
+      # Fallback: calculate from actual content, but add minimal padding (2%)
+      msize=$(du -sb level2/$part | cut -f1 | awk '{$1=int($1*1.02); if($1<1048576) $1=1048576; printf $1}')
+      echo "Creating $part image (calculated size: $msize)"
+    fi
     ./common/make_image.sh -r $part $msize level2/$part level2/${part}.img
     echo "Done."
   fi
@@ -47,13 +53,18 @@ if [ "$supertype" -eq "3" ] 2>/dev/null || [ "$supertype" -eq "2" ] 2>/dev/null;
   done
 
   if [ $superusage -ge $supersize ]; then
-    echo "Unable to create super image, recreated images are too big."
-    echo "Cleanup some files before retrying"
-    echo "Needed space: $superusage"
-    echo "Available maximum space: $supersize"
-    exit 0
+    echo "========================================="
+    echo "ERROR: Repacked images are too large for super partition!"
+    echo "Needed space:    $superusage bytes"
+    echo "Available space: $supersize bytes"
+    echo "Overflow:        $(( superusage - supersize )) bytes"
+    echo "========================================="
+    echo "Please remove some files or reduce partition content before retrying."
+    exit 1
   fi
 
   command="$command --sparse --output $IMAGE"
+  echo "Building super image (total: $superusage / $supersize bytes)..."
   eval "$command"
+  echo "Super image created: $(du -h "$IMAGE" | cut -f1)"
 fi

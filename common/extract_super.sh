@@ -9,7 +9,11 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 IMAGE="$1"
 OUTPUT_FOLDER="$2"
 
+# --- FIX: Save original sparse super size before desparseifying ---
+du -b "$IMAGE" | cut -f1 > level2/config/super_sparse_size.txt
+
 simg2img "$IMAGE" level2/super.img
+# Save the RAW (desparseified) super image size
 du -b level2/super.img | cut -f1 > level2/config/super_size.txt
 bin/lpunpack -slot=0 level2/super.img "$OUTPUT_FOLDER"
 rm -f level2/super.img
