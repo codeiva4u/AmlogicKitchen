@@ -103,25 +103,9 @@ case "$level" in
       done
     fi
 
-    # --- FIX: Patch vbmeta to disable AVB verification ---
-    # When ext4 images are rebuilt, filesystem UUIDs and hash trees change.
-    # vbmeta still has the OLD hashes, so the bootloader rejects the firmware.
-    # We patch the vbmeta header flags to disable verification (flag = 0x02).
-    # AVB header format: magic "AVB0" at offset 0, flags at byte offset 120 (4 bytes big-endian).
-    # Flag 0x02 = AVB_VBMETA_IMAGE_FLAGS_VERIFICATION_DISABLED
-    for vbf in level1/vbmeta.PARTITION level1/vbmeta_system.PARTITION; do
-      if [[ -f "$vbf" ]]; then
-        magic=$(head -c 4 "$vbf" 2>/dev/null || true)
-        if [[ "$magic" == "AVB0" ]]; then
-          echo "Patching AVB verification flags in $(basename $vbf)..."
-          # Write 0x00000002 (disable verification) at byte offset 120 (flags field)
-          printf '\x00\x00\x00\x02' | dd of="$vbf" bs=1 seek=120 count=4 conv=notrunc 2>/dev/null
-          echo "  -> AVB verification disabled in $(basename $vbf)"
-        else
-          echo "$(basename $vbf) is not AVB format, skipping..."
-        fi
-      fi
-    done
+    # REVERTED: Patch vbmeta to disable AVB verification
+    # Direct dd patching of vbmeta flags breaks the RSA signature on strict Amlogic bootloaders,
+    # causing an immediate fall back to USB flashing mode (Flashing Loop).
 
     rm -f level2/*.txt
     ;;
