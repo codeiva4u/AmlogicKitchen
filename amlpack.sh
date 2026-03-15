@@ -103,23 +103,9 @@ case "$level" in
       done
     fi
 
-    # --- FIX: Completely disable AVB by generating a dummy disabled vbmeta ---
-    # Since repack creates a new EXT4 filesystem, the original dm-verity hashes in vbmeta
-    # are no longer mathematically valid, causing Android 10+ devices to bootloop.
-    # The Amlogic bootloader allows booting if the vbmeta explicitly flags HASHTREE_DISABLED (2).
-    if [[ -f level1/vbmeta.PARTITION ]]; then
-      echo "Generating disabled vbmeta to bypass Android Verified Boot (AVB)..."
-      if [[ -f "bin/avbtool.py" ]]; then
-        # Store original to copy partition descriptors
-        mv level1/vbmeta.PARTITION level1/vbmeta_orig.img
-        # Generate new vbmeta with HASHTREE_DISABLED (2) but keeping OEM metadata structure
-        python3 bin/avbtool.py make_vbmeta_image --flags 2 --padding_size 4096 --include_descriptors_from_image level1/vbmeta_orig.img --output level1/vbmeta.PARTITION
-        rm -f level1/vbmeta_orig.img
-        echo "Successfully patched vbmeta!"
-      else
-        echo "WARNING: bin/avbtool.py not found. AVB might cause a bootloop!"
-      fi
-    fi
+    # REVERTED: Patch vbmeta to disable AVB verification
+    # Direct dd patching of vbmeta flags breaks the RSA signature on strict Amlogic bootloaders,
+    # causing an immediate fall back to USB flashing mode (Flashing Loop).
 
     rm -f level2/*.txt
     ;;
