@@ -46,9 +46,17 @@ fi
 
 # Determine the size to use for ext4 filesystem creation
 if [[ -n "$ORIG_RAW_SIZE" && "$ORIG_RAW_SIZE" -gt 0 ]] 2>/dev/null; then
-    # Add 10% padding to the precise original raw size to prevent "out of space" block allocation errors.
-    # The image will be shrunk down to minimum size anyway by resize2fs a few lines down.
-    EXT4_SIZE=$(echo "$ORIG_RAW_SIZE" | awk '{printf "%.0f", $1 * 1.10}')
+    if [[ $USE_RESIZE == true ]]; then
+        # When resize2fs -M is going to be run, we can safely pad the size (10%) to prevent
+        # "out of space" block allocation errors in make_ext4fs.
+        EXT4_SIZE=$(echo "$ORIG_RAW_SIZE" | awk '{printf "%.0f", $1 * 1.10}')
+    else
+        # --- CRITICAL BUG FIX ---
+        # When USE_RESIZE is false (non-super Amlogic repacks), we MUST NOT add padding!
+        # If padded, the image overflows the fixed eMMC partition boundaries on the TV box,
+        # gets truncated by the Amlogic Burn Tool, and causes a kernel panic/bootloop.
+        EXT4_SIZE="$ORIG_RAW_SIZE"
+    fi
 else
     EXT4_SIZE="$SIZE"
 fi
