@@ -250,6 +250,23 @@ sudo bash clean.sh
 
 ---
 
+### 🛡️ Advanced Fixes: Amlogic Locked Bootloaders & UUID Spoofing
+
+If you've ever unpacked an Android 9+ Amlogic ROM (like the KM3) and repacked it **without making any changes**, only to find the device stuck in a **Black Screen Bootloop** or a **Flashing Loop**, this kitchen now includes a native cryptographic bypass.
+
+**Why do Amlogic boxes bootloop on a 1:1 repack?**
+1. **Flashing Loop (Hardware Reject):** Amlogic Boot ROMs are often OEM locked. If you try to modify `vbmeta.PARTITION` to disable AVB (Android Verified Boot), the RSA signature breaks, and the device refuses to even start the kernel, looping the USB connection.
+2. **Bootloop / Kernel Panic:** If you leave `vbmeta` untouched and just rebuild `system.img`, the device bootloops at the OS level. Why? Because the `make_ext4fs` compiler generates a **New Random UUID** for the filesystem on every build. The kernel's `fstab` looks for the *original* UUID to verify safety, fails to find it, and triggers a Kernel Panic.
+
+**The Fix (Native to this Kitchen):**
+This suite now actively performs **Ext4 Superblock UUID Spoofing** during the Level 2 pipeline:
+- **During Unpack:** `imgextractor.py` silently parses the original 16-byte `s_uuid` of the OEM Ext4 partition (`system`, `vendor`, etc.) and saves it out to `level2/config/`.
+- **During Repack (`make_image.sh`):** Instead of compiling straight to a Sparse image, the kitchen temporarily builds a RAW Ext4 image, invokes `set_ext4_uuid.py` to byte-for-byte hex edit the original UUID back into the primary superblock, and finally converts it back to Sparse format.
+
+The Amlogic device mathematically sees the rebuilt partition as a 100% clone of the OEM partition, allowing custom framework and app modifications to boot seamlessly on heavily locked TV boxes!
+
+---
+
 ### 🙏 Credits
 
 Special thanks to the contributors and original authors of the tools integrated into this kitchen:
