@@ -52,10 +52,11 @@ if [[ -n "$ORIG_RAW_SIZE" && "$ORIG_RAW_SIZE" -gt 0 ]] 2>/dev/null; then
         EXT4_SIZE=$(echo "$ORIG_RAW_SIZE" | awk '{printf "%.0f", $1 * 1.10}')
     else
         # --- CRITICAL BUG FIX ---
-        # When USE_RESIZE is false (non-super Amlogic repacks), we MUST NOT add padding!
-        # If padded, the image overflows the fixed eMMC partition boundaries on the TV box,
-        # gets truncated by the Amlogic Burn Tool, and causes a kernel panic/bootloop.
-        EXT4_SIZE="$ORIG_RAW_SIZE"
+        # When USE_RESIZE is false (non-super Amlogic repacks), we MUST NOT use the inflated 
+        # _raw_size.txt directly if we are building a SPARSE image! The raw size includes fully
+        # allocated 0x00 sectors mathematically. But we want the exact footprint matching the ZIP.
+        # Fall back to the passed '$SIZE' parameter (which is the actual original sparse file size)!
+        EXT4_SIZE="$SIZE"
     fi
 else
     EXT4_SIZE="$SIZE"
@@ -76,27 +77,20 @@ else
     SPARSE_REQUIRED=false
     if [[ $USE_SPARSE == true ]] || ( [[ "$ORIG_TYPE" == "sparse" ]] && [[ $USE_RESIZE == false ]] ); then
         SPARSE_REQUIRED=true
+        FLAGS="-s $FLAGS"
     fi
 
-    # ALWAYS create RAW first so we can inject the exact Partition UUID
+    # ALWAYS create formatted EXT4 Image natively (Sparse or RAW depending on FLAGS)
     bin/make_ext4fs $FLAGS "$TEMP_IMG" "level2/$PART"
     
     # --- FIX: Inject Original Filesystem UUID into Superblock ---
     # The bootloader or kernel panics if the newly rebuilt ext4 image has a random UUID.
-    # We use our custom script to hex-edit the exact original bits back into the raw superblock.
+    # We use our custom Python script to perfectly hex-edit the original bits into either the RAW or SPARSE output.
     UUID_FILE="level2/config/${PART}_uuid.txt"
     if [[ -f "$UUID_FILE" ]]; then
         ORIG_UUID=$(cat "$UUID_FILE")
-        echo "  -> Restoring original Ext4 UUID: $ORIG_UUID"
+        echo "  -> Restoring original Ext4 UUID natively: $ORIG_UUID"
         python3 bin/set_ext4_uuid.py "$TEMP_IMG" "$ORIG_UUID" || true
-    fi
-
-    # Convert back to Sparse if required
-    if [[ $SPARSE_REQUIRED == true ]]; then
-        echo "  -> Converting RAW Ext4 back to Sparse format..."
-        mv "$TEMP_IMG" "${TEMP_IMG}.raw"
-        bin/img2simg "${TEMP_IMG}.raw" "$TEMP_IMG"
-        rm -f "${TEMP_IMG}.raw"
     fi
 
     # Resize if requested (used by make_super.sh to minimize before lpmake)
